@@ -1,0 +1,20 @@
+## .NET
+bin/
+obj/
+publish/
+
+## IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## 运行时生成
+config.json
+
+## OS
+Thumbs.db
+Desktop.ini
+.DS_Store

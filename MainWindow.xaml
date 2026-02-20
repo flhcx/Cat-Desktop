@@ -1,0 +1,214 @@
+﻿<Window x:Class="DesktopOrganizer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="桌面收纳盒"
+        Width="420" Height="520"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <!-- 悬浮球按钮样式：使用 tubiao.jpg 图片 -->
+        <Style x:Key="FloatButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="56"/>
+            <Setter Property="Height" Value="56"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform x:Name="BtnScale" ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <!-- 外发光 -->
+                            <Ellipse Fill="Transparent">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect Color="#667EEA" BlurRadius="18" ShadowDepth="0" Opacity="0.5"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <!-- 图片圆形裁剪 -->
+                            <Ellipse x:Name="MainCircle">
+                                <Ellipse.Fill>
+                                    <ImageBrush ImageSource="tubiao.jpg" Stretch="UniformToFill"/>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                            <!-- 高亮遮罩 (悬浮时) -->
+                            <Ellipse x:Name="HoverOverlay" Fill="#00FFFFFF" Opacity="0"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale"
+                                                             Storyboard.TargetProperty="ScaleX"
+                                                             To="1.12" Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale"
+                                                             Storyboard.TargetProperty="ScaleY"
+                                                             To="1.12" Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="HoverOverlay"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0.15" Duration="0:0:0.2"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale"
+                                                             Storyboard.TargetProperty="ScaleX"
+                                                             To="1" Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="BtnScale"
+                                                             Storyboard.TargetProperty="ScaleY"
+                                                             To="1" Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="HoverOverlay"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.2"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 快捷方式卡片按钮样式 -->
+        <Style x:Key="ShortcutCardStyle" TargetType="Border">
+            <Setter Property="Width" Value="80"/>
+            <Setter Property="Height" Value="90"/>
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{StaticResource CardBg}"/>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background">
+                        <Setter.Value>
+                            <SolidColorBrush Color="{StaticResource CardHoverBg}"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <!-- 最外层 Grid 填充 #01 透明色，确保鼠标事件可命中整个窗口区域 -->
+    <Grid Background="#01000000"
+          MouseLeftButtonDown="DragArea_MouseLeftButtonDown">
+
+        <!-- 整体布局：悬浮球在左上角，面板在下方展开 -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部栏：悬浮球 + 标题（整条可拖拽） -->
+        <Grid Grid.Row="0" Margin="0,0,0,4" Background="#01000000">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 悬浮球按钮：按住拖拽=移动窗口，点击=切换面板 -->
+            <Button x:Name="FloatButton"
+                    Style="{StaticResource FloatButtonStyle}"
+                    PreviewMouseLeftButtonDown="FloatButton_MouseLeftButtonDown"
+                    PreviewMouseMove="FloatButton_MouseMove"
+                    PreviewMouseLeftButtonUp="FloatButton_MouseLeftButtonUp"
+                    Grid.Column="0" Margin="8,8,4,8"/>
+
+            <!-- 标题 (面板展开时显示) -->
+            <TextBlock x:Name="TitleText" Grid.Column="1"
+                       Text="桌面收纳盒" FontSize="16" FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       VerticalAlignment="Center" Margin="8,0,0,0"
+                       Visibility="Collapsed"/>
+
+            <!-- 控制按钮 -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal"
+                        VerticalAlignment="Top" Margin="0,12,12,0"
+                        x:Name="ControlButtons" Visibility="Collapsed">
+                <!-- 最小化（折叠面板）-->
+                <Button Content="─" FontSize="12" Width="28" Height="28"
+                        Background="Transparent" Foreground="#94A3B8"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="MinimizeButton_Click"/>
+                <!-- 退出 -->
+                <Button Content="✕" FontSize="12" Width="28" Height="28"
+                        Background="Transparent" Foreground="#94A3B8"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="CloseButton_Click" Margin="4,0,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- 展开面板 -->
+        <Border x:Name="PanelBorder" Grid.Row="1"
+                CornerRadius="16" Margin="8,0,8,8"
+                Visibility="Collapsed"
+                RenderTransformOrigin="0.5,0">
+            <Border.RenderTransform>
+                <ScaleTransform x:Name="PanelScale" ScaleX="1" ScaleY="1"/>
+            </Border.RenderTransform>
+            <Border.Background>
+                <SolidColorBrush Color="{StaticResource PanelBg}"/>
+            </Border.Background>
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="4" Opacity="0.4"/>
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 快捷方式列表区域 -->
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                              Margin="8,8,8,4">
+                    <WrapPanel x:Name="ShortcutsPanel"
+                               Orientation="Horizontal"
+                               HorizontalAlignment="Center"/>
+                </ScrollViewer>
+
+                <!-- 拖拽提示区域 -->
+                <Border x:Name="DropZone" Grid.Row="1"
+                        CornerRadius="12" Margin="12,4,12,12"
+                        MinHeight="70"
+                        BorderThickness="2"
+                        AllowDrop="True"
+                        Drop="DropZone_Drop"
+                        DragEnter="DropZone_DragEnter"
+                        DragLeave="DropZone_DragLeave"
+                        DragOver="DropZone_DragOver"
+                        MouseLeftButtonDown="DropZone_MouseLeftButtonDown">
+                    <Border.BorderBrush>
+                        <SolidColorBrush x:Name="DropZoneBorderBrush" Color="#40667EEA"/>
+                    </Border.BorderBrush>
+                    <Border.Background>
+                        <SolidColorBrush x:Name="DropZoneBgBrush" Color="#10667EEA"/>
+                    </Border.Background>
+
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="📥" FontSize="22" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="DropZoneText"
+                                   Text="拖入 .lnk 或 .exe 文件"
+                                   FontSize="11" Foreground="#7094A3B8"
+                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
