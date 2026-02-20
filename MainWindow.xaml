@@ -6,7 +6,7 @@
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
-        Topmost="True"
+        Topmost="False"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
         Loaded="Window_Loaded"
@@ -140,6 +140,11 @@
             <StackPanel Grid.Column="2" Orientation="Horizontal"
                         VerticalAlignment="Top" Margin="0,12,12,0"
                         x:Name="ControlButtons" Visibility="Collapsed">
+                <!-- 设置按钮 -->
+                <Button Content="⚙" FontSize="14" Width="28" Height="28"
+                        Background="Transparent" Foreground="#94A3B8"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="SettingsButton_Click"/>
                 <!-- 最小化（折叠面板）-->
                 <Button Content="─" FontSize="12" Width="28" Height="28"
                         Background="Transparent" Foreground="#94A3B8"
@@ -174,12 +179,80 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 快捷方式列表区域 -->
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                <!-- 快捷方式列表区域（主页） -->
+                <ScrollViewer x:Name="ShortcutsScrollViewer" Grid.Row="0" VerticalScrollBarVisibility="Auto"
                               Margin="8,8,8,4">
                     <WrapPanel x:Name="ShortcutsPanel"
                                Orientation="Horizontal"
                                HorizontalAlignment="Center"/>
+                </ScrollViewer>
+
+                <!-- 设置面板（默认隐藏） -->
+                <ScrollViewer x:Name="SettingsPanel" Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                              Margin="12,8,12,4" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Text="⚙️ 设置" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,4,0,12"/>
+
+                        <!-- 设置项 1：记住窗口位置 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="📍 记住窗口位置" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="下次启动时恢复上次退出的位置" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="RememberPositionToggle" Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Click="RememberPositionToggle_Click"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 设置项 2：开机自启 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="🚀 开机自启" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="系统启动时自动运行桌面收纳盒" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="AutoStartToggle" Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Click="AutoStartToggle_Click"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 设置项 3：更换悬浮球图片 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="🎨 悬浮球图片" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock x:Name="BallImagePathText" Text="默认图片" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="更换" FontSize="11" Padding="10,4"
+                                            Background="#30667EEA" Foreground="#667EEA"
+                                            BorderThickness="0" Cursor="Hand"
+                                            Click="ChangeBallImage_Click"/>
+                                    <Button x:Name="ResetBallImageBtn" Content="重置" FontSize="11" Padding="10,4" Margin="6,0,0,0"
+                                            Background="#20FF6B6B" Foreground="#FF6B6B"
+                                            BorderThickness="0" Cursor="Hand"
+                                            Click="ResetBallImage_Click" Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                 </ScrollViewer>
 
                 <!-- 拖拽提示区域 -->

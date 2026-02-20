@@ -55,5 +55,23 @@ namespace DesktopOrganizer.Models
 
         [JsonPropertyName("isPanelExpanded")]
         public bool IsPanelExpanded { get; set; } = false;
+
+        /// <summary>
+        /// 是否记住上次退出的窗口位置（默认开启）
+        /// </summary>
+        [JsonPropertyName("rememberPosition")]
+        public bool RememberPosition { get; set; } = true;
+
+        /// <summary>
+        /// 是否开机自启动
+        /// </summary>
+        [JsonPropertyName("autoStart")]
+        public bool AutoStart { get; set; } = false;
+
+        /// <summary>
+        /// 自定义悬浮球图片路径（为空则使用默认图片）
+        /// </summary>
+        [JsonPropertyName("customBallImagePath")]
+        public string CustomBallImagePath { get; set; } = string.Empty;
     }
 }

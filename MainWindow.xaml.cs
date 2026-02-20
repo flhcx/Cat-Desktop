@@ -31,6 +31,12 @@ namespace DesktopOrganizer
         private bool _isFloatBallDragging = false;
         private Point _floatBallMouseDownPos;
 
+        // 窗口尺寸常量：折叠时只保留悬浮球大小，展开时恢复完整尺寸
+        private const double CollapsedWidth = 76;
+        private const double CollapsedHeight = 76;
+        private const double ExpandedWidth = 420;
+        private const double ExpandedHeight = 520;
+
         // 开机自启注册表键名
         private const string AutoStartKeyName = "DesktopOrganizer";
         private const string AutoStartRegistryPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
@@ -53,11 +59,23 @@ namespace DesktopOrganizer
             _config = DataService.Load();
             _shortcuts = _config.Shortcuts;
 
-            // 恢复窗口位置
-            if (_config.WindowLeft >= 0 && _config.WindowTop >= 0)
+            // 恢复窗口位置（仅在开启记住位置时）
+            if (_config.RememberPosition && _config.WindowLeft >= 0 && _config.WindowTop >= 0)
             {
                 this.Left = _config.WindowLeft;
                 this.Top = _config.WindowTop;
+            }
+
+            // 监听窗口位置变化，防止拖出屏幕
+            this.LocationChanged += (s, args) => ClampToScreen();
+
+            // 初始化设置面板状态
+            InitSettingsPanel();
+
+            // 加载自定义悬浮球图片
+            if (!string.IsNullOrEmpty(_config.CustomBallImagePath) && System.IO.File.Exists(_config.CustomBallImagePath))
+            {
+                ApplyBallImage(_config.CustomBallImagePath);
             }
 
             // 渲染已有的快捷方式
@@ -68,6 +86,12 @@ namespace DesktopOrganizer
             {
                 ExpandPanel();
             }
+            else
+            {
+                // 初始状态为折叠，缩小窗口到悬浮球大小
+                this.Width = CollapsedWidth;
+                this.Height = CollapsedHeight;
+            }
         }
 
         /// <summary>
@@ -76,6 +100,30 @@ namespace DesktopOrganizer
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             SaveConfig();
+        }
+
+        /// <summary>
+        /// 限制窗口不超出屏幕工作区域
+        /// </summary>
+        private void ClampToScreen()
+        {
+            var screen = SystemParameters.WorkArea;
+
+            // 左边界：窗口左边缘不能超出屏幕左侧
+            if (this.Left < screen.Left)
+                this.Left = screen.Left;
+
+            // 右边界：窗口右边缘不能超出屏幕右侧
+            if (this.Left + this.ActualWidth > screen.Right)
+                this.Left = screen.Right - this.ActualWidth;
+
+            // 上边界
+            if (this.Top < screen.Top)
+                this.Top = screen.Top;
+
+            // 下边界
+            if (this.Top + this.ActualHeight > screen.Bottom)
+                this.Top = screen.Bottom - this.ActualHeight;
         }
 
         #endregion
@@ -139,6 +187,11 @@ namespace DesktopOrganizer
         private void ExpandPanel()
         {
             _isPanelExpanded = true;
+
+            // 先恢复窗口尺寸
+            this.Width = ExpandedWidth;
+            this.Height = ExpandedHeight;
+
             PanelBorder.Visibility = Visibility.Visible;
             TitleText.Visibility = Visibility.Visible;
             ControlButtons.Visibility = Visibility.Visible;
@@ -177,6 +230,10 @@ namespace DesktopOrganizer
                 PanelBorder.Visibility = Visibility.Collapsed;
                 TitleText.Visibility = Visibility.Collapsed;
                 ControlButtons.Visibility = Visibility.Collapsed;
+
+                // 动画完成后缩小窗口到悬浮球大小
+                this.Width = CollapsedWidth;
+                this.Height = CollapsedHeight;
             };
 
             PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
@@ -737,6 +794,167 @@ namespace DesktopOrganizer
             // 回退到入口程序集
             return Process.GetCurrentProcess().MainModule?.FileName
                    ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+        }
+
+        #endregion
+
+        #region 设置面板
+
+        // 设置面板是否可见
+        private bool _isSettingsVisible = false;
+
+        /// <summary>
+        /// 初始化设置面板中各开关的状态
+        /// </summary>
+        private void InitSettingsPanel()
+        {
+            RememberPositionToggle.IsChecked = _config.RememberPosition;
+            AutoStartToggle.IsChecked = _config.AutoStart;
+
+            if (!string.IsNullOrEmpty(_config.CustomBallImagePath))
+            {
+                BallImagePathText.Text = Path.GetFileName(_config.CustomBallImagePath);
+                ResetBallImageBtn.Visibility = Visibility.Visible;
+            }
+        }
+
+        /// <summary>
+        /// 齿轮按钮：切换主页/设置页
+        /// </summary>
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isSettingsVisible = !_isSettingsVisible;
+
+            if (_isSettingsVisible)
+            {
+                // 显示设置，隐藏快捷方式列表和拖拽区域
+                ShortcutsScrollViewer.Visibility = Visibility.Collapsed;
+                DropZone.Visibility = Visibility.Collapsed;
+                SettingsPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // 返回主页
+                SettingsPanel.Visibility = Visibility.Collapsed;
+                ShortcutsScrollViewer.Visibility = Visibility.Visible;
+                DropZone.Visibility = Visibility.Visible;
+            }
+        }
+
+        /// <summary>
+        /// 记住位置开关
+        /// </summary>
+        private void RememberPositionToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _config.RememberPosition = RememberPositionToggle.IsChecked == true;
+            SaveConfig();
+        }
+
+        /// <summary>
+        /// 开机自启开关
+        /// </summary>
+        private void AutoStartToggle_Click(object sender, RoutedEventArgs e)
+        {
+            bool enabled = AutoStartToggle.IsChecked == true;
+            _config.AutoStart = enabled;
+
+            try
+            {
+                if (enabled)
+                    EnableAutoStart();
+                else
+                    DisableAutoStart();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"设置开机自启失败:\n{ex.Message}",
+                                "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                // 回退 UI 状态
+                AutoStartToggle.IsChecked = !enabled;
+                _config.AutoStart = !enabled;
+            }
+
+            SaveConfig();
+        }
+
+        /// <summary>
+        /// 更换悬浮球图片按钮
+        /// </summary>
+        private void ChangeBallImage_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择悬浮球图片",
+                Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp;*.gif|所有文件|*.*"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    ApplyBallImage(dialog.FileName);
+                    _config.CustomBallImagePath = dialog.FileName;
+                    BallImagePathText.Text = Path.GetFileName(dialog.FileName);
+                    ResetBallImageBtn.Visibility = Visibility.Visible;
+                    SaveConfig();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"加载图片失败:\n{ex.Message}",
+                                    "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 重置悬浮球图片为默认
+        /// </summary>
+        private void ResetBallImage_Click(object sender, RoutedEventArgs e)
+        {
+            _config.CustomBallImagePath = string.Empty;
+            BallImagePathText.Text = "默认图片";
+            ResetBallImageBtn.Visibility = Visibility.Collapsed;
+
+            // 恢复默认图片 tubiao.jpg（嵌入资源）
+            ApplyBallImage(null);
+            SaveConfig();
+        }
+
+        /// <summary>
+        /// 应用悬浮球图片（null = 恢复默认）
+        /// </summary>
+        private void ApplyBallImage(string? imagePath)
+        {
+            try
+            {
+                // 查找悬浮球 Ellipse 的 ImageBrush
+                var template = FloatButton.Template;
+                var mainCircle = template.FindName("MainCircle", FloatButton) as System.Windows.Shapes.Ellipse;
+                if (mainCircle == null) return;
+
+                ImageSource imageSource;
+                if (string.IsNullOrEmpty(imagePath))
+                {
+                    // 恢复默认嵌入资源
+                    imageSource = new BitmapImage(new Uri("pack://application:,,,/tubiao.jpg"));
+                }
+                else
+                {
+                    // 加载外部文件
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(imagePath, UriKind.Absolute);
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    imageSource = bitmap;
+                }
+
+                mainCircle.Fill = new ImageBrush(imageSource) { Stretch = Stretch.UniformToFill };
+            }
+            catch
+            {
+                // 图片加载失败时静默处理
+            }
         }
 
         #endregion
