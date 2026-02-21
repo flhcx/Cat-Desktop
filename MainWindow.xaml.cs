@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -31,9 +32,9 @@ namespace DesktopOrganizer
         private bool _isFloatBallDragging = false;
         private Point _floatBallMouseDownPos;
 
-        // 窗口尺寸常量：折叠时只保留悬浮球大小，展开时恢复完整尺寸
-        private const double CollapsedWidth = 76;
-        private const double CollapsedHeight = 76;
+        // 窗口尺寸：折叠时由悬浮球大小动态计算，展开时固定尺寸
+        private double CollapsedWidth => _config.BallSize + 20;
+        private double CollapsedHeight => _config.BallSize + 20;
         private const double ExpandedWidth = 420;
         private const double ExpandedHeight = 520;
 
@@ -71,6 +72,9 @@ namespace DesktopOrganizer
 
             // 初始化设置面板状态
             InitSettingsPanel();
+
+            // 应用悬浮球大小
+            ApplyBallSize(_config.BallSize);
 
             // 加载自定义悬浮球图片
             if (!string.IsNullOrEmpty(_config.CustomBallImagePath) && System.IO.File.Exists(_config.CustomBallImagePath))
@@ -175,17 +179,24 @@ namespace DesktopOrganizer
         /// </summary>
         private void TogglePanel()
         {
+            // 防止动画过程中重复触发导致卡死
+            if (_isAnimating) return;
+
             if (_isPanelExpanded)
                 CollapsePanel();
             else
                 ExpandPanel();
         }
 
+        // 动画锁标志，防止快速连续点击导致竞态
+        private bool _isAnimating = false;
+
         /// <summary>
-        /// 展开面板，带缩放动画
+        /// 展开面板，根据配置的特效播放动画
         /// </summary>
         private void ExpandPanel()
         {
+            _isAnimating = true;
             _isPanelExpanded = true;
 
             // 先恢复窗口尺寸
@@ -196,50 +207,279 @@ namespace DesktopOrganizer
             TitleText.Visibility = Visibility.Visible;
             ControlButtons.Visibility = Visibility.Visible;
 
-            // 缩放展开动画
-            var scaleXAnim = new DoubleAnimation(0.8, 1, TimeSpan.FromMilliseconds(250))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            var scaleYAnim = new DoubleAnimation(0.8, 1, TimeSpan.FromMilliseconds(250))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
-            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnim);
+            // 确保 TranslateTransform 存在
+            EnsurePanelTranslateTransform();
 
-            // 透明度动画
-            var opacityAnim = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200));
-            PanelBorder.BeginAnimation(OpacityProperty, opacityAnim);
+            // ★ 关键修复：先清除上一次动画的所有属性锁定
+            ResetPanelTransforms();
+
+            string effect = _config.OpenEffect ?? "Scale";
+            var duration = TimeSpan.FromMilliseconds(300);
+
+            switch (effect)
+            {
+                case "SlideDown":
+                    PlayExpandSlideDown(duration);
+                    break;
+                case "SlideRight":
+                    PlayExpandSlideRight(duration);
+                    break;
+                case "Bounce":
+                    PlayExpandBounce(duration);
+                    break;
+                case "Rotate":
+                    PlayExpandRotate(duration);
+                    break;
+                case "Fade":
+                    PlayExpandFade(duration);
+                    break;
+                default: // Scale
+                    PlayExpandScale(duration);
+                    break;
+            }
+
+            // 展开动画完成后解锁
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = duration + TimeSpan.FromMilliseconds(50)
+            };
+            timer.Tick += (s, e) => { _isAnimating = false; timer.Stop(); };
+            timer.Start();
         }
 
         /// <summary>
-        /// 折叠面板，带缩放动画
+        /// 折叠面板，根据配置的特效播放动画
         /// </summary>
         private void CollapsePanel()
         {
+            _isAnimating = true;
             _isPanelExpanded = false;
+            EnsurePanelTranslateTransform();
 
-            // 缩放收缩动画
-            var scaleXAnim = new DoubleAnimation(1, 0.8, TimeSpan.FromMilliseconds(200));
-            var scaleYAnim = new DoubleAnimation(1, 0.8, TimeSpan.FromMilliseconds(200));
-            var opacityAnim = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
+            // ★ 关键修复：先清除之前的动画锁定，再播放折叠动画
+            ResetPanelTransforms();
 
-            opacityAnim.Completed += (s, e) =>
+            string effect = _config.OpenEffect ?? "Scale";
+            var duration = TimeSpan.FromMilliseconds(200);
+
+            // 所有特效共用的完成回调
+            Action onCompleted = () =>
             {
                 PanelBorder.Visibility = Visibility.Collapsed;
                 TitleText.Visibility = Visibility.Collapsed;
                 ControlButtons.Visibility = Visibility.Collapsed;
-
-                // 动画完成后缩小窗口到悬浮球大小
                 this.Width = CollapsedWidth;
                 this.Height = CollapsedHeight;
+                // 重置变换
+                ResetPanelTransforms();
+                // 解锁
+                _isAnimating = false;
             };
 
-            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
-            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnim);
-            PanelBorder.BeginAnimation(OpacityProperty, opacityAnim);
+            switch (effect)
+            {
+                case "SlideDown":
+                    PlayCollapseSlideDown(duration, onCompleted);
+                    break;
+                case "SlideRight":
+                    PlayCollapseSlideRight(duration, onCompleted);
+                    break;
+                case "Bounce":
+                    PlayCollapseBounce(duration, onCompleted);
+                    break;
+                case "Rotate":
+                    PlayCollapseRotate(duration, onCompleted);
+                    break;
+                case "Fade":
+                    PlayCollapseFade(duration, onCompleted);
+                    break;
+                default:
+                    PlayCollapseScale(duration, onCompleted);
+                    break;
+            }
         }
+
+        #region 动画特效实现
+
+        private TranslateTransform? _panelTranslate;
+        private RotateTransform? _panelRotate;
+
+        /// <summary>
+        /// 确保 PanelBorder 拥有 TransformGroup（包含 Scale、Translate、Rotate）
+        /// </summary>
+        private void EnsurePanelTranslateTransform()
+        {
+            if (_panelTranslate != null && _panelRotate != null) return;
+
+            var group = PanelBorder.RenderTransform as TransformGroup;
+            if (group == null)
+            {
+                group = new TransformGroup();
+                group.Children.Add(PanelScale);
+                _panelTranslate = new TranslateTransform(0, 0);
+                group.Children.Add(_panelTranslate);
+                _panelRotate = new RotateTransform(0);
+                group.Children.Add(_panelRotate);
+                PanelBorder.RenderTransform = group;
+            }
+            else
+            {
+                // 查找或添加
+                _panelTranslate = group.Children.OfType<TranslateTransform>().FirstOrDefault();
+                if (_panelTranslate == null)
+                {
+                    _panelTranslate = new TranslateTransform(0, 0);
+                    group.Children.Add(_panelTranslate);
+                }
+                _panelRotate = group.Children.OfType<RotateTransform>().FirstOrDefault();
+                if (_panelRotate == null)
+                {
+                    _panelRotate = new RotateTransform(0);
+                    group.Children.Add(_panelRotate);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 重置面板的所有变换为初始状态（必须先清除动画绑定）
+        /// </summary>
+        private void ResetPanelTransforms()
+        {
+            // ★ 先清除动画绑定（传入 null 解除 WPF 动画锁定），再设置值
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            PanelScale.ScaleX = 1;
+            PanelScale.ScaleY = 1;
+            PanelBorder.BeginAnimation(OpacityProperty, null);
+            PanelBorder.Opacity = 1;
+
+            if (_panelTranslate != null)
+            {
+                _panelTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                _panelTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+                _panelTranslate.X = 0;
+                _panelTranslate.Y = 0;
+            }
+            if (_panelRotate != null)
+            {
+                _panelRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+                _panelRotate.Angle = 0;
+            }
+        }
+
+        /// <summary>
+        /// 创建带缓动的动画
+        /// </summary>
+        private DoubleAnimation MakeAnim(double from, double to, TimeSpan dur, IEasingFunction? easing = null)
+        {
+            var anim = new DoubleAnimation(from, to, dur);
+            if (easing != null) anim.EasingFunction = easing;
+            return anim;
+        }
+
+        // ===== 特效 1：缩放 (Scale) =====
+        private void PlayExpandScale(TimeSpan dur)
+        {
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(0.8, 1, dur, ease));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(0.8, 1, dur, ease));
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, dur));
+        }
+        private void PlayCollapseScale(TimeSpan dur, Action onDone)
+        {
+            var opAnim = MakeAnim(1, 0, dur);
+            opAnim.Completed += (s, e) => onDone();
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(1, 0.8, dur));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(1, 0.8, dur));
+            PanelBorder.BeginAnimation(OpacityProperty, opAnim);
+        }
+
+        // ===== 特效 2：下滑 (SlideDown) =====
+        private void PlayExpandSlideDown(TimeSpan dur)
+        {
+            if (_panelTranslate == null) return;
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            _panelTranslate.BeginAnimation(TranslateTransform.YProperty, MakeAnim(-60, 0, dur, ease));
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, dur));
+        }
+        private void PlayCollapseSlideDown(TimeSpan dur, Action onDone)
+        {
+            if (_panelTranslate == null) { onDone(); return; }
+            var anim = MakeAnim(0, -60, dur);
+            anim.Completed += (s, e) => onDone();
+            _panelTranslate.BeginAnimation(TranslateTransform.YProperty, anim);
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(1, 0, dur));
+        }
+
+        // ===== 特效 3：右滑 (SlideRight) =====
+        private void PlayExpandSlideRight(TimeSpan dur)
+        {
+            if (_panelTranslate == null) return;
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            _panelTranslate.BeginAnimation(TranslateTransform.XProperty, MakeAnim(-80, 0, dur, ease));
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, dur));
+        }
+        private void PlayCollapseSlideRight(TimeSpan dur, Action onDone)
+        {
+            if (_panelTranslate == null) { onDone(); return; }
+            var anim = MakeAnim(0, -80, dur);
+            anim.Completed += (s, e) => onDone();
+            _panelTranslate.BeginAnimation(TranslateTransform.XProperty, anim);
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(1, 0, dur));
+        }
+
+        // ===== 特效 4：弹性 (Bounce) =====
+        private void PlayExpandBounce(TimeSpan dur)
+        {
+            var ease = new ElasticEase { EasingMode = EasingMode.EaseOut, Oscillations = 1, Springiness = 5 };
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(0.3, 1, TimeSpan.FromMilliseconds(500), ease));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(0.3, 1, TimeSpan.FromMilliseconds(500), ease));
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, dur));
+        }
+        private void PlayCollapseBounce(TimeSpan dur, Action onDone)
+        {
+            var ease = new BackEase { EasingMode = EasingMode.EaseIn, Amplitude = 0.4 };
+            var opAnim = MakeAnim(1, 0, dur);
+            opAnim.Completed += (s, e) => onDone();
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(1, 0.3, dur, ease));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(1, 0.3, dur, ease));
+            PanelBorder.BeginAnimation(OpacityProperty, opAnim);
+        }
+
+        // ===== 特效 5：旋转 (Rotate) =====
+        private void PlayExpandRotate(TimeSpan dur)
+        {
+            if (_panelRotate == null) return;
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(0.5, 1, dur, ease));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(0.5, 1, dur, ease));
+            _panelRotate.BeginAnimation(RotateTransform.AngleProperty, MakeAnim(-15, 0, dur, ease));
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, dur));
+        }
+        private void PlayCollapseRotate(TimeSpan dur, Action onDone)
+        {
+            if (_panelRotate == null) { onDone(); return; }
+            var opAnim = MakeAnim(1, 0, dur);
+            opAnim.Completed += (s, e) => onDone();
+            PanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, MakeAnim(1, 0.5, dur));
+            PanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, MakeAnim(1, 0.5, dur));
+            _panelRotate.BeginAnimation(RotateTransform.AngleProperty, MakeAnim(0, -15, dur));
+            PanelBorder.BeginAnimation(OpacityProperty, opAnim);
+        }
+
+        // ===== 特效 6：淡入 (Fade) =====
+        private void PlayExpandFade(TimeSpan dur)
+        {
+            PanelBorder.BeginAnimation(OpacityProperty, MakeAnim(0, 1, TimeSpan.FromMilliseconds(400)));
+        }
+        private void PlayCollapseFade(TimeSpan dur, Action onDone)
+        {
+            var anim = MakeAnim(1, 0, TimeSpan.FromMilliseconds(300));
+            anim.Completed += (s, e) => onDone();
+            PanelBorder.BeginAnimation(OpacityProperty, anim);
+        }
+
+        #endregion
 
         /// <summary>
         /// 最小化按钮：折叠面板
@@ -437,14 +677,53 @@ namespace DesktopOrganizer
         #region UI 渲染
 
         /// <summary>
-        /// 渲染所有快捷方式到面板
+        /// 渲染所有快捷方式到面板（按分类分组显示）
         /// </summary>
         private void RenderAllShortcuts()
         {
             ShortcutsPanel.Children.Clear();
-            foreach (var item in _shortcuts)
+
+            // 检查是否有分类数据
+            bool hasCategories = _shortcuts.Any(s => s.Category != "未分类" && !string.IsNullOrEmpty(s.Category));
+
+            if (!hasCategories)
             {
-                AddShortcutCard(item);
+                // 无分类时直接显示所有快捷方式
+                foreach (var item in _shortcuts)
+                {
+                    AddShortcutCard(item);
+                }
+                return;
+            }
+
+            // 按分类分组
+            var categoryOrder = ShortcutCategorizer.GetCategoryOrder();
+            var groups = _shortcuts.GroupBy(s => s.Category ?? "未分类")
+                                   .OrderBy(g => {
+                                       int idx = categoryOrder.IndexOf(g.Key);
+                                       return idx >= 0 ? idx : 999;
+                                   });
+
+            foreach (var group in groups)
+            {
+                // 分类标题
+                var header = new TextBlock
+                {
+                    Text = $"{group.Key} ({group.Count()})",
+                    FontSize = 13,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#B0BEC5")),
+                    Margin = new Thickness(8, 8, 0, 2)
+                };
+                // 让 TextBlock 占满整行
+                header.SetValue(WrapPanel.WidthProperty, 380.0);
+                ShortcutsPanel.Children.Add(header);
+
+                // 分类下的快捷方式卡片
+                foreach (var item in group)
+                {
+                    AddShortcutCard(item);
+                }
             }
         }
 
@@ -816,6 +1095,28 @@ namespace DesktopOrganizer
                 BallImagePathText.Text = Path.GetFileName(_config.CustomBallImagePath);
                 ResetBallImageBtn.Visibility = Visibility.Visible;
             }
+
+            // 初始化悬浮球大小滑块
+            BallSizeSlider.Value = _config.BallSize;
+            BallSizeValueText.Text = $"{_config.BallSize} px";
+
+            // 初始化特效选择下拉框
+            string effectTag = _config.OpenEffect ?? "Scale";
+            foreach (ComboBoxItem item in EffectComboBox.Items)
+            {
+                if (item.Tag is string tag && tag == effectTag)
+                {
+                    EffectComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+
+            // 初始化隐藏桌面图标开关
+            HideDesktopToggle.IsChecked = _config.HideDesktopIcons;
+            if (_config.HideDesktopIcons)
+            {
+                SetDesktopIconsVisibility(false);
+            }
         }
 
         /// <summary>
@@ -957,6 +1258,223 @@ namespace DesktopOrganizer
             }
         }
 
+        /// <summary>
+        /// 应用悬浮球大小（动态修改按钮宽高）
+        /// </summary>
+        private void ApplyBallSize(double size)
+        {
+            FloatButton.Width = size;
+            FloatButton.Height = size;
+
+            // 同步更新折叠状态下的窗口尺寸
+            if (!_isPanelExpanded)
+            {
+                this.Width = size + 20;
+                this.Height = size + 20;
+            }
+        }
+
+        /// <summary>
+        /// 滑动条值改变：调整悬浮球大小
+        /// </summary>
+        private void BallSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_config == null) return; // 初始化时跳过
+
+            double size = Math.Round(e.NewValue);
+            _config.BallSize = size;
+            BallSizeValueText.Text = $"{size} px";
+            ApplyBallSize(size);
+            SaveConfig();
+        }
+
+        /// <summary>
+        /// 下拉框选择变更：切换展开特效
+        /// </summary>
+        private void EffectComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_config == null) return; // 初始化时跳过
+
+            var selected = EffectComboBox.SelectedItem as ComboBoxItem;
+            if (selected?.Tag is string effectName)
+            {
+                _config.OpenEffect = effectName;
+                SaveConfig();
+            }
+        }
+
+        #region 隐藏桌面图标 (Win32 API)
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter,
+                                                   string? lpszClass, string? lpszWindow);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        // 切换桌面图标显示的 Shell 命令 ID
+        private const uint WM_COMMAND = 0x0111;
+        private const int TOGGLE_DESKTOP_ICONS_CMD = 0x7402;
+
+        /// <summary>
+        /// 获取桌面图标列表窗口句柄 (SHELLDLL_DefView)
+        /// </summary>
+        private static IntPtr GetDesktopIconsHandle()
+        {
+            IntPtr progman = FindWindow("Progman", null);
+            IntPtr defView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+
+            if (defView == IntPtr.Zero)
+            {
+                // Wallpaper Engine 等软件会把桌面图标移到 WorkerW 子窗口中
+                IntPtr workerW = IntPtr.Zero;
+                do
+                {
+                    workerW = FindWindowEx(IntPtr.Zero, workerW, "WorkerW", null);
+                    if (workerW != IntPtr.Zero)
+                    {
+                        defView = FindWindowEx(workerW, IntPtr.Zero, "SHELLDLL_DefView", null);
+                        if (defView != IntPtr.Zero) break;
+                    }
+                } while (workerW != IntPtr.Zero);
+            }
+
+            return defView;
+        }
+
+        /// <summary>
+        /// 切换桌面图标显示/隐藏（等价于右键桌面→查看→显示桌面图标）
+        /// 使用 Shell 命令方式，不影响 Wallpaper Engine 等动态壁纸软件
+        /// </summary>
+        private void ToggleDesktopIcons()
+        {
+            IntPtr defView = GetDesktopIconsHandle();
+            if (defView != IntPtr.Zero)
+            {
+                SendMessage(defView, WM_COMMAND, (IntPtr)TOGGLE_DESKTOP_ICONS_CMD, IntPtr.Zero);
+            }
+        }
+
+        /// <summary>
+        /// 设置桌面图标可见性（仅在目标状态与当前不同时才切换）
+        /// </summary>
+        private void SetDesktopIconsVisibility(bool visible)
+        {
+            // 检测当前是否已有图标显示：找 SHELLDLL_DefView 下的 SysListView32
+            IntPtr defView = GetDesktopIconsHandle();
+            if (defView == IntPtr.Zero) return;
+
+            IntPtr listView = FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
+            if (listView == IntPtr.Zero) return;
+
+            // IsWindowVisible 判断 ListView 当前是否可见
+            bool currentlyVisible = NativeIsWindowVisible(listView);
+
+            // 如果当前状态已经是目标状态就不用切换
+            if (currentlyVisible != visible)
+            {
+                ToggleDesktopIcons();
+            }
+        }
+
+        [DllImport("user32.dll", EntryPoint = "IsWindowVisible")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool NativeIsWindowVisible(IntPtr hWnd);
+
+        #endregion
+
+        /// <summary>
+        /// 隐藏桌面图标开关
+        /// </summary>
+        private void HideDesktopToggle_Click(object sender, RoutedEventArgs e)
+        {
+            bool hide = HideDesktopToggle.IsChecked == true;
+            _config.HideDesktopIcons = hide;
+            SetDesktopIconsVisibility(!hide);
+            SaveConfig();
+        }
+
+        /// <summary>
+        /// 一键扫描桌面图标
+        /// </summary>
+        private void ScanDesktopButton_Click(object sender, RoutedEventArgs e)
+        {
+            var desktopFiles = ShortcutCategorizer.ScanDesktopFiles();
+
+            if (desktopFiles.Count == 0)
+            {
+                MessageBox.Show("未在桌面发现快捷方式。", "扫描结果",
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 过滤掉已存在的快捷方式（按目标路径或图标路径去重）
+            var existingPaths = new HashSet<string>(
+                _shortcuts.Select(s => s.TargetPath.ToLowerInvariant())
+                .Concat(_shortcuts.Select(s => s.IconSourcePath.ToLowerInvariant())));
+
+            int addedCount = 0;
+            foreach (var file in desktopFiles)
+            {
+                if (existingPaths.Contains(file.ToLowerInvariant())) continue;
+
+                try
+                {
+                    var item = ShortcutResolver.ResolveShortcut(file);
+                    if (existingPaths.Contains(item.TargetPath.ToLowerInvariant())) continue;
+
+                    // 自动分类
+                    item.Category = ShortcutCategorizer.Categorize(item);
+                    _shortcuts.Add(item);
+                    existingPaths.Add(item.TargetPath.ToLowerInvariant());
+                    existingPaths.Add(file.ToLowerInvariant());
+                    addedCount++;
+                }
+                catch { /* 解析失败则跳过 */ }
+            }
+
+            if (addedCount > 0)
+            {
+                RenderAllShortcuts();
+                SaveConfig();
+                MessageBox.Show($"扫描完成！\n新增 {addedCount} 个快捷方式，已自动分类。",
+                                "扫描导入", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show("桌面上的快捷方式已全部导入过了。",
+                                "扫描结果", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        /// <summary>
+        /// 一键自动归类
+        /// </summary>
+        private void AutoCategorizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_shortcuts.Count == 0)
+            {
+                MessageBox.Show("当前没有快捷方式可以归类。", "自动归类",
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            ShortcutCategorizer.CategorizeAll(_shortcuts);
+            RenderAllShortcuts();
+            SaveConfig();
+
+            // 统计分类结果
+            var stats = _shortcuts.GroupBy(s => s.Category)
+                                  .Select(g => $"  {g.Key}: {g.Count()} 个")
+                                  .ToList();
+
+            MessageBox.Show($"已完成自动归类！\n\n" + string.Join("\n", stats),
+                            "归类结果", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
         #endregion
 
         #region 配置保存
@@ -971,6 +1489,165 @@ namespace DesktopOrganizer
             _config.WindowTop = this.Top;
             _config.IsPanelExpanded = _isPanelExpanded;
             DataService.Save(_config);
+        }
+
+        #endregion
+
+        #region 窗口边缘拖拽调整大小
+
+        // 边缘检测阈值（像素）
+        private const int ResizeGripSize = 6;
+        // 最小尺寸
+        private const double MinWindowWidth = 300;
+        private const double MinWindowHeight = 350;
+
+        // 拖拽调整大小的状态
+        private bool _isResizing = false;
+        private int _resizeDirection = 0;
+        private Point _resizeStartPos; // 屏幕坐标
+        private double _resizeStartWidth, _resizeStartHeight, _resizeStartLeft, _resizeStartTop;
+
+        // 方向常量
+        private const int DIR_LEFT = 1;
+        private const int DIR_RIGHT = 2;
+        private const int DIR_TOP = 3;
+        private const int DIR_TOPLEFT = 4;
+        private const int DIR_TOPRIGHT = 5;
+        private const int DIR_BOTTOM = 6;
+        private const int DIR_BOTTOMLEFT = 7;
+        private const int DIR_BOTTOMRIGHT = 8;
+
+        /// <summary>
+        /// 检测鼠标位置相对于窗口边缘的方向（0 = 不在边缘）
+        /// </summary>
+        private int GetResizeDirection(Point pos)
+        {
+            if (!_isPanelExpanded) return 0;
+
+            bool left = pos.X < ResizeGripSize;
+            bool right = pos.X >= this.ActualWidth - ResizeGripSize;
+            bool top = pos.Y < ResizeGripSize;
+            bool bottom = pos.Y >= this.ActualHeight - ResizeGripSize;
+
+            if (top && left) return DIR_TOPLEFT;
+            if (top && right) return DIR_TOPRIGHT;
+            if (bottom && left) return DIR_BOTTOMLEFT;
+            if (bottom && right) return DIR_BOTTOMRIGHT;
+            if (left) return DIR_LEFT;
+            if (right) return DIR_RIGHT;
+            if (top) return DIR_TOP;
+            if (bottom) return DIR_BOTTOM;
+
+            return 0;
+        }
+
+        /// <summary>
+        /// 根据方向设置鼠标光标形状
+        /// </summary>
+        private void UpdateResizeCursor(int dir)
+        {
+            switch (dir)
+            {
+                case DIR_LEFT:
+                case DIR_RIGHT:
+                    this.Cursor = Cursors.SizeWE;
+                    break;
+                case DIR_TOP:
+                case DIR_BOTTOM:
+                    this.Cursor = Cursors.SizeNS;
+                    break;
+                case DIR_TOPLEFT:
+                case DIR_BOTTOMRIGHT:
+                    this.Cursor = Cursors.SizeNWSE;
+                    break;
+                case DIR_TOPRIGHT:
+                case DIR_BOTTOMLEFT:
+                    this.Cursor = Cursors.SizeNESW;
+                    break;
+                default:
+                    this.Cursor = Cursors.Arrow;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 窗口鼠标移动：更新边缘光标 + 拖拽调整大小
+        /// </summary>
+        private void Window_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_isResizing && e.LeftButton == MouseButtonState.Pressed)
+            {
+                // 获取当前屏幕坐标
+                Point screenPos = this.PointToScreen(e.GetPosition(this));
+                double dx = screenPos.X - _resizeStartPos.X;
+                double dy = screenPos.Y - _resizeStartPos.Y;
+
+                // 根据方向调整窗口
+                double newW = _resizeStartWidth, newH = _resizeStartHeight;
+                double newL = _resizeStartLeft, newT = _resizeStartTop;
+
+                bool hasLeft = _resizeDirection == DIR_LEFT || _resizeDirection == DIR_TOPLEFT || _resizeDirection == DIR_BOTTOMLEFT;
+                bool hasRight = _resizeDirection == DIR_RIGHT || _resizeDirection == DIR_TOPRIGHT || _resizeDirection == DIR_BOTTOMRIGHT;
+                bool hasTop = _resizeDirection == DIR_TOP || _resizeDirection == DIR_TOPLEFT || _resizeDirection == DIR_TOPRIGHT;
+                bool hasBottom = _resizeDirection == DIR_BOTTOM || _resizeDirection == DIR_BOTTOMLEFT || _resizeDirection == DIR_BOTTOMRIGHT;
+
+                if (hasRight) newW = Math.Max(MinWindowWidth, _resizeStartWidth + dx);
+                if (hasBottom) newH = Math.Max(MinWindowHeight, _resizeStartHeight + dy);
+                if (hasLeft)
+                {
+                    newW = Math.Max(MinWindowWidth, _resizeStartWidth - dx);
+                    newL = _resizeStartLeft + (_resizeStartWidth - newW);
+                }
+                if (hasTop)
+                {
+                    newH = Math.Max(MinWindowHeight, _resizeStartHeight - dy);
+                    newT = _resizeStartTop + (_resizeStartHeight - newH);
+                }
+
+                this.Left = newL;
+                this.Top = newT;
+                this.Width = newW;
+                this.Height = newH;
+            }
+            else if (e.LeftButton == MouseButtonState.Released)
+            {
+                _isResizing = false;
+                UpdateResizeCursor(GetResizeDirection(e.GetPosition(this)));
+            }
+        }
+
+        /// <summary>
+        /// 窗口鼠标按下：如果在边缘则开始拖拽调整大小
+        /// </summary>
+        private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            int dir = GetResizeDirection(e.GetPosition(this));
+            if (dir != 0)
+            {
+                _isResizing = true;
+                _resizeDirection = dir;
+                _resizeStartPos = this.PointToScreen(e.GetPosition(this));
+                _resizeStartWidth = this.ActualWidth;
+                _resizeStartHeight = this.ActualHeight;
+                _resizeStartLeft = this.Left;
+                _resizeStartTop = this.Top;
+                this.CaptureMouse();
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>
+        /// 窗口鼠标释放：结束调整大小
+        /// </summary>
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+        {
+            if (_isResizing)
+            {
+                _isResizing = false;
+                this.ReleaseMouseCapture();
+                this.Cursor = Cursors.Arrow;
+            }
+            base.OnMouseLeftButtonUp(e);
         }
 
         #endregion

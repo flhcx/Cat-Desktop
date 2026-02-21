@@ -37,6 +37,12 @@ namespace DesktopOrganizer.Models
         /// </summary>
         [JsonPropertyName("workingDirectory")]
         public string WorkingDirectory { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 分类名称（如 浏览器、开发工具、游戏 等）
+        /// </summary>
+        [JsonPropertyName("category")]
+        public string Category { get; set; } = "未分类";
     }
 
     /// <summary>
@@ -73,5 +79,23 @@ namespace DesktopOrganizer.Models
         /// </summary>
         [JsonPropertyName("customBallImagePath")]
         public string CustomBallImagePath { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 悬浮球大小（像素），范围 36~96，默认 56
+        /// </summary>
+        [JsonPropertyName("ballSize")]
+        public double BallSize { get; set; } = 56;
+
+        /// <summary>
+        /// 盒子展开特效名称：Scale / SlideDown / SlideRight / Bounce / Rotate / Fade
+        /// </summary>
+        [JsonPropertyName("openEffect")]
+        public string OpenEffect { get; set; } = "Scale";
+
+        /// <summary>
+        /// 是否隐藏桌面图标
+        /// </summary>
+        [JsonPropertyName("hideDesktopIcons")]
+        public bool HideDesktopIcons { get; set; } = false;
     }
 }

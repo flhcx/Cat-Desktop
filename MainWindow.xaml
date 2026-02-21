@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="桌面收纳盒"
         Width="420" Height="520"
+        MinWidth="300" MinHeight="350"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -10,7 +11,9 @@
         ShowInTaskbar="False"
         ResizeMode="NoResize"
         Loaded="Window_Loaded"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        MouseMove="Window_MouseMove"
+        PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
 
     <Window.Resources>
         <!-- 悬浮球按钮样式：使用 tubiao.jpg 图片 -->
@@ -101,6 +104,104 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <!-- 自定义 Slider 滑块样式：圆形发光滑块 -->
+        <Style x:Key="SliderThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid>
+                            <!-- 外发光 -->
+                            <Ellipse Width="18" Height="18" Fill="#667EEA" Opacity="0.3">
+                                <Ellipse.Effect>
+                                    <BlurEffect Radius="6"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <!-- 主圆 -->
+                            <Ellipse Width="14" Height="14" Fill="#667EEA" Stroke="#8B9CF7" StrokeThickness="1.5"/>
+                            <!-- 内圆点 -->
+                            <Ellipse Width="5" Height="5" Fill="White" Opacity="0.9"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 自定义 Slider 样式：渐变轨道 + 圆形滑块 -->
+        <Style TargetType="Slider">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <!-- 底部轨道 -->
+                            <Border Height="4" CornerRadius="2" Background="#25FFFFFF" Margin="9,0"/>
+                            <!-- 已选择轨道 -->
+                            <Canvas ClipToBounds="True" Height="4" Margin="9,0">
+                                <Border x:Name="TrackFill" Height="4" CornerRadius="2"
+                                        Width="{TemplateBinding ActualWidth}">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#667EEA" Offset="0"/>
+                                            <GradientStop Color="#764BA2" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                            </Canvas>
+                            <Track x:Name="PART_Track">
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource SliderThumbStyle}"/>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 自定义 ScrollBar 滑块样式 -->
+        <Style x:Key="ScrollBarThumbStyle" TargetType="Thumb">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border CornerRadius="3" Background="#40FFFFFF" Margin="1"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 自定义竖向 ScrollBar 样式：超窄半透明 -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="MinWidth" Value="6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ScrollBarThumbStyle}"/>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 自定义 ComboBox 样式：暗色下拉框 -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#25FFFFFF"/>
+            <Setter Property="Foreground" Value="#B0BEC5"/>
+            <Setter Property="BorderBrush" Value="#30FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
     </Window.Resources>
 
     <!-- 最外层 Grid 填充 #01 透明色，确保鼠标事件可命中整个窗口区域 -->
@@ -250,6 +351,110 @@
                                             BorderThickness="0" Cursor="Hand"
                                             Click="ResetBallImage_Click" Visibility="Collapsed"/>
                                 </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- 设置项 4：悬浮球大小 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="📐 悬浮球大小" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" Grid.Column="0"/>
+                                    <TextBlock x:Name="BallSizeValueText" Text="56 px" FontSize="12" Foreground="#667EEA"
+                                               Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Slider x:Name="BallSizeSlider" Minimum="36" Maximum="96" Value="56"
+                                        TickFrequency="4" IsSnapToTickEnabled="True"
+                                        Margin="0,8,0,0"
+                                        ValueChanged="BallSizeSlider_ValueChanged"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 设置项 5：盒子展开特效 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="✨ 展开特效" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="切换盒子打开时的动画效果" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="EffectComboBox" Grid.Column="1" Width="110"
+                                          VerticalAlignment="Center"
+                                          SelectionChanged="EffectComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="🔲 缩放" Tag="Scale"/>
+                                    <ComboBoxItem Content="⬇️ 下滑" Tag="SlideDown"/>
+                                    <ComboBoxItem Content="➡️ 右滑" Tag="SlideRight"/>
+                                    <ComboBoxItem Content="🎾 弹性" Tag="Bounce"/>
+                                    <ComboBoxItem Content="🔄 旋转" Tag="Rotate"/>
+                                    <ComboBoxItem Content="🌫️ 淡入" Tag="Fade"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <!-- 分割线 -->
+                        <Border Height="1" Background="#20FFFFFF" Margin="0,4,0,8"/>
+                        <TextBlock Text="🖥️ 桌面管理" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,8"/>
+
+                        <!-- 设置项 6：隐藏桌面图标 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="🙈 隐藏桌面图标" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="隐藏桌面上的所有图标" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="HideDesktopToggle" Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Click="HideDesktopToggle_Click"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 设置项 7：一键扫描桌面 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="🔍 扫描桌面图标" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="扫描桌面快捷方式并自动归类导入" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Content="扫描导入" FontSize="11" Padding="10,4"
+                                        Background="#30667EEA" Foreground="#667EEA"
+                                        BorderThickness="0" Cursor="Hand"
+                                        Click="ScanDesktopButton_Click"
+                                        Grid.Column="1" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 设置项 8：一键自动归类 -->
+                        <Border Background="#15FFFFFF" CornerRadius="10" Padding="14,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="📂 一键自动归类" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="智能识别已有快捷方式并分组显示" FontSize="10" Foreground="#7094A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Content="自动归类" FontSize="11" Padding="10,4"
+                                        Background="#3050C878" Foreground="#50C878"
+                                        BorderThickness="0" Cursor="Hand"
+                                        Click="AutoCategorizeButton_Click"
+                                        Grid.Column="1" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
                     </StackPanel>
